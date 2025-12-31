@@ -71,7 +71,7 @@ schemes <- list(
     codes = "BRC/Soldierflies_2018_07_30/Soliderflies_concepts_2018_07_30.csv"),
   # Plants (BSBI data)
   plants = list(
-    data = "BRC/Vascular_plants_(BSBI)/ccDat_v0.0.Rds",
+    data = "BRC/Vascular_plants_(BSBI)/ccDat_v0.0.Rda",
     codes = NA))
 
 # LOAD DATA ------------------------------------------------------------
@@ -81,19 +81,21 @@ schemes <- list(
 # "The Environmental Targets (Biodiversity) (England) Regulations 2023"
 # available here: https://www.legislation.gov.uk/uksi/2023/91/schedule/2/made
 s2 <-  paste0(dataDir, "Schedule2_species.csv") %>%
-  read.csv()
+  load()
 
-# LOOP THROUGH SCHEMES -------------------------------------------------
+# Find species aggregates
+aggSpecies <- grep("spp.|/", s2$Scientific.name, value = TRUE)
+
+### LOOP THROUGH SCHEMES 
 
 for (scheme in names(schemes)) {
-  scheme <- names(schemes)[12]
+  scheme <- names(schemes)[9]
 
   # For  vascular plants...
   if (scheme == "plants") {
     
      # Load in the plants .Rds file and assign to taxaData
-    paste0(dataDir, schemes[[scheme]]$data) %>%
-      readRDS(.)
+    load(paste0(dataDir, schemes[[scheme]]$data)) 
     taxaData <- dat
     rm(dat)
     
@@ -145,7 +147,9 @@ for (scheme in names(schemes)) {
       as.numeric()
     
     # Standardise taxon
-    taxaData$TAXON <- sub(":.*", "", taxaData$NAME)
+    # (remove everything after colon and any " agg")
+    taxaData$TAXON <- sub(":.*", "", taxaData$NAME) %>%
+      sub(" agg", "", .) 
     
     # For plants
   } else if (scheme == "plants") {
@@ -156,23 +160,74 @@ for (scheme in names(schemes)) {
                        GRID = hectad )
     
     # Convert to long format
-    pivot_longer()
-    
-    
+    taxaData <- taxaData %>%
+      # Pivot from 'wide' to 'long' format
+      # with PERIOD from period columns and COUNT from rows
+      pivot_longer(cols = !c(TAXON , qualifier, GRID, freq),
+                   names_to = "PERIOD", 
+                   values_to = "COUNT") %>%
+      # Drop redundant 'freq' and 'qualifier' columns
+      select(-c(freq, qualifier))
     
     # For all other schemes...
   } else {
     
+    # Read in species names and concept codes 
+    codeData <- paste0(dataDir, schemes[[scheme]]$codes) %>%
+      read.csv(.)
     
+    # Add in scientific name
+    taxaData <- merge(codeData, 
+                   taxaData, by = "CONCEPT")
     
-  }
-  
+    # Rename columns accordingly to standardise
+    taxaData <- rename(taxaData, 
+                       TAXON = NAME,
+                       GRID = SQ_10 )
 
+  }
+
+# AGGREGATE SPECIES ----------------------------------------------------------
+  # N.B. Species aggregates on the Schedule 2 list are either entire genus aggregates
+  # (e.g. "Aeshna spp.") or specific species complexes (e.g. Bombus lucorum / terrestris)
   
-   
+  # For each unique taxon name
+  for (i in unique(taxaData$TAXON)) {
+
+    # Extract genus and species components
+    iGeneric <- sub(" .*", "", i)
+    iSpecific <- sub(".* ", "", i)
+    
+    # Find which (if any) species aggregate genus names match iGeneric
+    aggSpecies_i <- grep(iGeneric, 
+                         sub(" .*", "", aggSpecies), 
+                         ignore.case = TRUE) %>%
+      aggSpecies[.]
+    
+    # If one matches...
+    if(length(aggSpecies_i) > 0) {
+      print(i)
+      # ...and if species aggregate contains "spp." OR 
+      # if the specific name of i is contained within 
+      # the species aggregate, e.g. "Bombus lucorum / terrestris"
+      if(grepl("spp.", aggSpecies_i) == TRUE |
+         grepl(iSpecific, aggSpecies_i, ignore.case = TRUE) == TRUE ) {
+        
+        # Assign i TAXON to the aggregate name
+        taxaData [which(taxaData$TAXON == i), 
+                  "TAXON"] <- 
+          aggSpecies_i
+      
+        # If more than one matches print an error
+      } else if (length(aggSpecies_i) > 1) {
+      print("ERROR: More than one species match in list of aggregated species")
+    }
+  }
+}
+    
 # FILTER DATA ----------------------------------------------------------
   
-  
+  need to test previous section
   
 # ADD IN COORDINATES ---------------------------------------------------
   
