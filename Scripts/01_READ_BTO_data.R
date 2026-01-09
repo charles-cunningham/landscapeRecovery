@@ -65,7 +65,7 @@ unlink(paste0(dataDir, "atlas_open_data_files.zip"), recursive = TRUE)
 # LOAD DATA -------------------------------------------------------------
 
 # Load distribution data
-birds <- paste0(dataDir, "distributions.csv") %>%
+taxaData <- paste0(dataDir, "distributions.csv") %>%
   read.csv()
 
 # Load species lookup
@@ -82,54 +82,58 @@ s2 <-  paste0(dataDir, "../Schedule2_species.csv") %>%
 # FILTER DATA -----------------------------------------------------------
 
 # Add in scientific name
-birds <- merge(species[, c("speccode", "scientific_name")], 
-               birds, by = "speccode")
+taxaData <- merge(species[, c("speccode", "scientific_name")], 
+               taxaData, by = "speccode")
 
 # Filter by location, resolution and record status
-birds <- birds %>%
+taxaData <- taxaData %>%
+  # Filter to only last two Breeding Atlases to align with other records
+  filter(period %in% c("1988-91", "2008-11")) %>% 
   # Filter out Irish records
   filter(island == "B") %>%
-  # Filter out channel island records
-  filter(!grepl("WA|WV", grid)) %>%
   # Filter to only 10km resolution records
   filter(resolution == 10) %>%
+  # Filter out channel island records
+  filter(!grepl("WA|WV", grid)) %>%
+  # Filter out Isle of Man Records
+  filter(!grepl("SC|NX30|NX40", grid)) %>%
   # Filter out non-certain records
   filter(!(status %in% c("Probable", "Possible")))
 
 # Filter to schedule 2 species only
-birds <- birds %>%
+taxaData <- taxaData %>%
   filter(scientific_name %in% s2$Scientific.name)
 
 # ADD IN COORDINATES ----------------------------------------------------
 
 # Extract easting and northing from OS grid using BRCmap package
-XY <- OSgrid2GB_EN(birds$grid,
+XY <- OSgrid2GB_EN(taxaData$grid,
                    centre = TRUE,
                    gr_prec = 10000)
 
 # Join easting/northing with bird data
-birds <- bind_cols(birds, XY)
+taxaData <- bind_cols(taxaData, XY)
 
 # Remove redundant columns to save memory
-birds <- birds %>%
+taxaData <- taxaData %>%
   select(!c("speccode", "grid", "island", "resolution", "n_tenkms", "status"))
 
 # Standardise column names
-birds <- rename(birds, TAXON = scientific_name, PERIOD = period)
+taxaData <- rename(taxaData, TAXON = scientific_name, PERIOD = period)
 
 # DATA FOR MODELLING ----------------------------------------------------
 
 # Filter to only the latest periods (>2000) to model
-birdModelData <- birds %>%
-  filter(PERIOD %in% c("2007/08-10/11", "2008-11" ))
+taxaModelData <- taxaData %>%
+  filter(PERIOD == "2008-11" )
 
 # SAVE -------------------------------------------------------------------
 
 # Create directory
-dir.create(paste0(dataDir, "../../Processed/Birds"), 
+dir.create(paste0(dataDir, "../../Processed/birds"), 
            recursive = TRUE, showWarnings = FALSE)
 # Save
-save(birds,
-     file = paste0(dataDir, "../../Processed/Birds/birdData.RData"))
-save(birdModelData,
-     file = paste0(dataDir, "../../Processed/Birds/birdDataToModel.RData"))
+save(taxaData,
+     file = paste0(dataDir, "../../Processed/Birds/taxaData.RData"))
+save(taxaModelData,
+     file = paste0(dataDir, "../../Processed/Birds/taxaModelData.RData"))
